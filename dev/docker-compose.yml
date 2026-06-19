@@ -1,0 +1,56 @@
+# Isolated skeleton harness: casaos-mock <- bridge <- e2e (plays Dex).
+# Run:  docker compose -f dev/docker-compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+name: casaos-oidc-bridge-dev
+
+services:
+  casaos-mock:
+    image: golang:1.22-alpine
+    working_dir: /src
+    volumes:
+      - ./casaos-mock:/src
+      - gomod:/go/pkg/mod
+    command: sh -c "go mod tidy && go run ."
+    environment:
+      MOCK_USER: admin
+      MOCK_PASS: casaos
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  bridge:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      BRIDGE_ISSUER: http://bridge:8089
+      BRIDGE_ADDR: ":8089"
+      CASAOS_LOGIN_URL: http://casaos-mock:8080/v1/users/login
+      CASAOS_JWKS_URL: http://casaos-mock:8080/.well-known/jwks.json
+      CLIENT_ID: dex
+      CLIENT_SECRET: dex-secret
+      REDIRECT_URIS: http://e2e:9000/callback
+    depends_on:
+      casaos-mock:
+        condition: service_healthy
+
+  e2e:
+    image: golang:1.22-alpine
+    working_dir: /src
+    volumes:
+      - ./e2e:/src
+      - gomod:/go/pkg/mod
+    command: sh -c "go mod tidy && go run ."
+    environment:
+      BRIDGE_ISSUER: http://bridge:8089
+      CLIENT_ID: dex
+      CLIENT_SECRET: dex-secret
+      REDIRECT_URI: http://e2e:9000/callback
+      MOCK_USER: admin
+      MOCK_PASS: casaos
+    depends_on:
+      - bridge
+
+volumes:
+  gomod: {}
