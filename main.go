@@ -87,6 +87,9 @@ func main() {
 	mux.HandleFunc("/token", b.handleToken)
 	mux.HandleFunc("/jwks", b.handleJWKS)
 	mux.HandleFunc("/userinfo", b.handleUserinfo)
+	// Non-interactive credential validation for API / machine clients (no redirect).
+	// Used by the AppShield gate to authenticate CasaOS Basic/Bearer credentials.
+	mux.HandleFunc("/validate", b.handleValidate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 
 	log.Printf("casaos-oidc-bridge listening on %s (issuer=%s, casaos=%s)", cfg.Addr, cfg.Issuer, cfg.CasaLoginURL)

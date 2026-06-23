@@ -77,6 +77,20 @@ against the real CasaOS UI first.
 | `CASAOS_JWKS_URL` | `http://casaos-mock:8080/.well-known/jwks.json` | CasaOS JWKS |
 | `CLIENT_ID` / `CLIENT_SECRET` | `dex` / `dex-secret` | The single downstream client (Dex) |
 | `REDIRECT_URIS` | `http://localhost:9000/callback` | Comma-separated allowed redirect URIs |
+| `VALIDATE_SECRET` | _(unset)_ | If set, `/validate` requires a matching `X-Validate-Secret` header |
+
+## `/validate` — non-interactive credential check (for API / machine clients)
+
+In addition to the OIDC flow, the bridge exposes `POST /validate` for trusted internal
+callers (the AppShield gate) to verify a CasaOS credential **with no browser redirect**:
+
+- `Authorization: Basic base64(user:pass)` → validated via CasaOS `/v1/users/login`
+- `Authorization: Bearer <casaos-jwt>` → verified against the live CasaOS JWKS
+
+Returns `200 {"ok":true,"username":...,"sub":...}` on success, `401` otherwise. This is how
+an API client authenticates with its real CasaOS identity (Dex's password grant can't reach
+the CasaOS OIDC connector). Keep it on the internal `pcs` network; set `VALIDATE_SECRET` to
+restrict callers (it sits in the CasaOS password path for the Basic case).
 
 ## Layout
 
