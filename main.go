@@ -87,10 +87,22 @@ func main() {
 	mux.HandleFunc("/token", b.handleToken)
 	mux.HandleFunc("/jwks", b.handleJWKS)
 	mux.HandleFunc("/userinfo", b.handleUserinfo)
-	// Non-interactive credential validation for API / machine clients (no redirect).
-	// Used by the AppShield gate to authenticate CasaOS Basic/Bearer credentials.
-	mux.HandleFunc("/validate", b.handleValidate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+
+	// Internal-only credential validation listener (deliberately NOT on the public,
+	// gateway-routed port). /validate authenticates CasaOS Basic/Bearer credentials
+	// for the AppShield gate; if it were internet-reachable it would be a CasaOS
+	// password-bruteforce oracle. It binds a separate port that is exposed only on
+	// the internal `pcs` network (no Caddy label), so no shared secret is needed.
+	validateAddr := env("VALIDATE_ADDR", ":8090")
+	vmux := http.NewServeMux()
+	vmux.HandleFunc("/validate", b.handleValidate)
+	vmux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	go func() {
+		log.Printf("casaos-oidc-bridge /validate (internal, pcs-net only) listening on %s", validateAddr)
+		vsrv := &http.Server{Addr: validateAddr, Handler: vmux, ReadHeaderTimeout: 5 * time.Second}
+		log.Fatal(vsrv.ListenAndServe())
+	}()
 
 	log.Printf("casaos-oidc-bridge listening on %s (issuer=%s, casaos=%s)", cfg.Addr, cfg.Issuer, cfg.CasaLoginURL)
 	srv := &http.Server{Addr: cfg.Addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}

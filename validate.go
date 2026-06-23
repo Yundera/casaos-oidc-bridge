@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v2/jwt"
@@ -21,22 +20,14 @@ import (
 // On success: 200 + {"ok":true,"username":...,"sub":...}. Otherwise: 401.
 //
 // SECURITY: this sits in the CasaOS credential path (passwords transit it for the
-// Basic case) and, left open, is a CasaOS password-bruteforce oracle. Keep it on
-// the internal `pcs` network only, never log credentials, and — recommended — set
-// VALIDATE_SECRET so only callers presenting the matching X-Validate-Secret header
-// (i.e. the AppShield gate) may use it.
+// Basic case) and, if internet-reachable, is a CasaOS password-bruteforce oracle.
+// It is therefore served ONLY on the bridge's internal VALIDATE_ADDR listener
+// (pcs-network only, never gateway-routed — see main.go), so no shared secret is
+// required. Never log credentials.
 func (b *Bridge) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
-	}
-
-	// Optional shared-secret guard (defense against arbitrary pcs-network callers).
-	if want := os.Getenv("VALIDATE_SECRET"); want != "" {
-		if r.Header.Get("X-Validate-Secret") != want {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
 	}
 
 	authz := r.Header.Get("Authorization")
