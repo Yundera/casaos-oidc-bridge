@@ -33,18 +33,165 @@ func (b *Bridge) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
-// loginTmpl is the bridge's own minimal login form (server-side credential proxy
-// to CasaOS — see README "Design decision"). Deliberately bare for the skeleton.
+// loginTmpl is the bridge's own login form (server-side credential proxy to
+// CasaOS — see README "Design decision"). Self-contained: all styles are inline
+// so the page renders with no external network dependency.
 var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
-<html><body>
-<h2>Sign in (CasaOS)</h2>
-<form method="POST" action="/login">
-<input type="hidden" name="rid" value="{{.RID}}">
-<p>Username: <input name="username"></p>
-<p>Password: <input name="password" type="password"></p>
-<button type="submit">Sign in</button>
-</form>
-</body></html>`))
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --card: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.12);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --error-bg: rgba(239, 68, 68, 0.12);
+    --error-border: rgba(239, 68, 68, 0.4);
+    --error-text: #fca5a5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(99, 102, 241, 0.25), transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, rgba(14, 165, 233, 0.18), transparent 55%),
+      linear-gradient(160deg, var(--bg-1), var(--bg-2));
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 36px 32px 32px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  }
+  .logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, var(--accent), #0ea5e9);
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45);
+  }
+  .logo svg { width: 24px; height: 24px; color: #fff; }
+  h1 { font-size: 21px; font-weight: 650; margin: 0 0 4px; }
+  .lede { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+  .field { margin-bottom: 16px; }
+  label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 550;
+    color: var(--muted);
+    margin-bottom: 7px;
+  }
+  input[type=text], input[type=password] {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 14.5px;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  input::placeholder { color: rgba(148, 163, 184, 0.55); }
+  input:focus {
+    border-color: var(--accent);
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  }
+  button {
+    width: 100%;
+    margin-top: 6px;
+    padding: 12px 14px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.05s;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:active { transform: translateY(1px); }
+  .alert {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 11px 13px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+  }
+  .alert svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+    </div>
+
+    <h1>Sign in</h1>
+    <p class="lede">Enter your credentials to continue.</p>
+
+    {{if .Error}}
+    <div class="alert" role="alert">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span>Incorrect username or password. Please try again.</span>
+    </div>
+    {{end}}
+
+    <form method="POST" action="/login">
+      <input type="hidden" name="rid" value="{{.RID}}">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false"
+               placeholder="admin" autofocus required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password"
+               placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
+      </div>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>`))
 
 func (b *Bridge) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -76,7 +223,7 @@ func (b *Bridge) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallengeMethod: ccm,
 	})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = loginTmpl.Execute(w, map[string]string{"RID": rid})
+	_ = loginTmpl.Execute(w, map[string]any{"RID": rid})
 }
 
 func (b *Bridge) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +243,7 @@ func (b *Bridge) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Re-show the form on bad credentials.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = loginTmpl.Execute(w, map[string]string{"RID": rid})
+		_ = loginTmpl.Execute(w, map[string]any{"RID": rid, "Error": true})
 		return
 	}
 	// Verify the CasaOS-issued token against the live JWKS (proof of identity).
