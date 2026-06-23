@@ -9,8 +9,18 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jws"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 )
+
+// casaosKeySetOpts make verification tolerant of CasaOS's JWKS quirks: the
+// access token carries no `kid`, and the published JWK omits `alg`. UseDefault
+// falls back to the single key when the token has no kid; InferAlgorithmFromKey
+// derives the alg (ES256) from the key type.
+var casaosKeySetOpts = []interface{}{
+	jws.WithUseDefault(true),
+	jws.WithInferAlgorithmFromKey(true),
+}
 
 // CasaUser mirrors the data.user object returned by CasaOS /v1/users/login (Gate 2).
 type CasaUser struct {
@@ -84,9 +94,9 @@ func (c *CasaOSClient) VerifyToken(ctx context.Context, raw string) error {
 	if err != nil {
 		return fmt.Errorf("jwks fetch: %w", err)
 	}
-	if _, err := jwt.Parse([]byte(raw), jwt.WithKeySet(set)); err != nil {
+	if _, err := jwt.Parse([]byte(raw), jwt.WithKeySet(set, casaosKeySetOpts...)); err != nil {
 		if set2, e2 := c.cache.Refresh(ctx, c.jwksURL); e2 == nil {
-			if _, e3 := jwt.Parse([]byte(raw), jwt.WithKeySet(set2)); e3 == nil {
+			if _, e3 := jwt.Parse([]byte(raw), jwt.WithKeySet(set2, casaosKeySetOpts...)); e3 == nil {
 				return nil
 			}
 		}

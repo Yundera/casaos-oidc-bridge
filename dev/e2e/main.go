@@ -155,10 +155,16 @@ func run() error {
 	}
 	email, _ := idt.Get("email")
 	groups, _ := idt.Get("groups")
+	name, _ := idt.Get("name")
 	if email == "" {
 		return fmt.Errorf("id_token missing email claim")
 	}
-	fmt.Printf("  id_token verified: sub=%s email=%v groups=%v nonce-ok\n", idt.Subject(), email, groups)
+	// Dex's OIDC connector requires a `name` claim — assert it so we never
+	// regress the real-Dex integration.
+	if name == "" || name == nil {
+		return fmt.Errorf("id_token missing name claim (Dex connector requires it)")
+	}
+	fmt.Printf("  id_token verified: sub=%s name=%v email=%v groups=%v nonce-ok\n", idt.Subject(), name, email, groups)
 
 	// 7. /userinfo with the access token
 	req, _ := http.NewRequest(http.MethodGet, issuer+"/userinfo", nil)

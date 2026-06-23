@@ -187,6 +187,9 @@ func (b *Bridge) signToken(ac AuthCode, now time.Time, isID bool) ([]byte, error
 		IssuedAt(now).
 		Expiration(now.Add(time.Hour)).
 		Claim("email", ac.Email).
+		Claim("email_verified", true).
+		Claim("name", ac.Sub).
+		Claim("preferred_username", ac.Sub).
 		Claim("groups", ac.Groups)
 	if isID && ac.Req.Nonce != "" {
 		builder = builder.Claim("nonce", ac.Req.Nonce)

@@ -42,8 +42,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_ = k.Set(jwk.KeyIDKey, "casaos-1")
-	_ = k.Set(jwk.AlgorithmKey, jwa.ES256)
+	// Faithfully match real CasaOS: it sets NEITHER a `kid` NOR `alg` on its
+	// signing key / JWKS. (An earlier mock set both, which masked a bridge bug:
+	// verification must tolerate a missing kid + infer the alg.)
 	signKey = k
 	pub, _ := k.PublicKey()
 	pubSet = jwk.NewSet()
