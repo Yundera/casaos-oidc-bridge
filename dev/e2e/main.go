@@ -100,6 +100,7 @@ func run() error {
 	if resp.StatusCode != http.StatusFound {
 		return fmt.Errorf("login expected 302, got %d", resp.StatusCode)
 	}
+	sessionCookies := resp.Cookies()
 	loc, err := url.Parse(resp.Header.Get("Location"))
 	if err != nil {
 		return fmt.Errorf("bad redirect location: %w", err)
@@ -112,6 +113,44 @@ func run() error {
 		return fmt.Errorf("no code in redirect: %s", loc.String())
 	}
 	fmt.Println("  login OK (code issued, state echoed)")
+
+	// 4b. SSO: a second /authorize carrying the bridge session cookie must skip
+	// the login form and redirect straight back with a fresh code (no re-prompt).
+	// This is what makes login on one app grant access to the next.
+	var haveSession bool
+	for _, c := range sessionCookies {
+		if c.Name == "bridge_session" && c.Value != "" {
+			haveSession = true
+		}
+	}
+	if !haveSession {
+		return fmt.Errorf("login set no bridge_session cookie — SSO would not work")
+	}
+	state2 := randStr()
+	a2 := *au // copy the authorize URL, swap state for a fresh one
+	q2 := a2.Query()
+	q2.Set("state", state2)
+	a2.RawQuery = q2.Encode()
+	req2, _ := http.NewRequest(http.MethodGet, a2.String(), nil)
+	for _, c := range sessionCookies {
+		req2.AddCookie(c)
+	}
+	sso, err := noRedir.Do(req2)
+	if err != nil {
+		return fmt.Errorf("sso authorize: %w", err)
+	}
+	sso.Body.Close()
+	if sso.StatusCode != http.StatusFound {
+		return fmt.Errorf("sso authorize expected 302 (no re-prompt), got %d", sso.StatusCode)
+	}
+	loc2, err := url.Parse(sso.Header.Get("Location"))
+	if err != nil {
+		return fmt.Errorf("sso bad redirect: %w", err)
+	}
+	if loc2.Query().Get("state") != state2 || loc2.Query().Get("code") == "" {
+		return fmt.Errorf("sso redirect missing code/state: %s", loc2.String())
+	}
+	fmt.Println("  SSO OK (second authorize skipped the form, code issued)")
 
 	// 5. POST /token (authorization_code + PKCE verifier)
 	tr, err := http.PostForm(tokenEP, url.Values{

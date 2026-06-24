@@ -213,7 +213,7 @@ func (b *Bridge) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, http.StatusBadRequest, "only S256 PKCE supported")
 		return
 	}
-	rid := b.store.putRequest(AuthRequest{
+	req := AuthRequest{
 		ClientID:            q.Get("client_id"),
 		RedirectURI:         redirectURI,
 		State:               q.Get("state"),
@@ -221,7 +221,18 @@ func (b *Bridge) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		Scope:               q.Get("scope"),
 		CodeChallenge:       q.Get("code_challenge"),
 		CodeChallengeMethod: ccm,
-	})
+	}
+
+	// SSO: if the browser already holds a valid bridge session, skip the login
+	// form and issue a code straight away. This is what makes login on one app
+	// silently grant access to the next — Dex re-runs this connector per client,
+	// so the shared session has to live here.
+	if sess, ok := b.currentSession(r); ok {
+		b.completeAuth(w, r, req, sess)
+		return
+	}
+
+	rid := b.store.putRequest(req)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = loginTmpl.Execute(w, map[string]any{"RID": rid})
 }
@@ -257,11 +268,26 @@ func (b *Bridge) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if sub == "" {
 		sub = fmt.Sprintf("casaos-%d", user.Id)
 	}
-	code := b.store.putCode(AuthCode{
-		Req:     req,
+	sess := Session{
 		Sub:     sub,
 		Email:   user.Email,
 		Groups:  []string{user.Role}, // CasaOS role -> groups (default "admin"), Gate 2
+		Expires: time.Now().Add(b.cfg.SessionTTL),
+	}
+	// Open the SSO session so subsequent apps' /authorize calls don't re-prompt.
+	b.setSessionCookie(w, b.store.putSession(sess))
+	b.completeAuth(w, r, req, sess)
+}
+
+// completeAuth mints a one-time code for an authenticated subject and redirects
+// back to the client. Shared by the fresh-login path (/login) and the
+// already-have-a-session path (/authorize).
+func (b *Bridge) completeAuth(w http.ResponseWriter, r *http.Request, req AuthRequest, sess Session) {
+	code := b.store.putCode(AuthCode{
+		Req:     req,
+		Sub:     sess.Sub,
+		Email:   sess.Email,
+		Groups:  sess.Groups,
 		Expires: time.Now().Add(60 * time.Second),
 	})
 
@@ -273,6 +299,57 @@ func (b *Bridge) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u.RawQuery = qs.Encode()
 	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
+// handleLogout ends the bridge SSO session: drops the server-side session and
+// clears the cookie. After this, the next /authorize re-prompts for credentials.
+func (b *Bridge) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		b.store.delSession(c.Value)
+	}
+	b.clearSessionCookie(w)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+const sessionCookie = "bridge_session"
+
+func (b *Bridge) currentSession(r *http.Request) (Session, bool) {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return Session{}, false
+	}
+	return b.store.getSession(c.Value)
+}
+
+func (b *Bridge) setSessionCookie(w http.ResponseWriter, sid string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    sid,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   b.secureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(b.cfg.SessionTTL / time.Second),
+	})
+}
+
+func (b *Bridge) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   b.secureCookies(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
+// secureCookies marks the session cookie Secure whenever the bridge is reached
+// over HTTPS (it sits behind Caddy TLS in production; the issuer scheme is the
+// reliable signal since the bridge itself terminates plain HTTP).
+func (b *Bridge) secureCookies() bool {
+	return strings.HasPrefix(b.cfg.Issuer, "https://")
 }
 
 func (b *Bridge) handleToken(w http.ResponseWriter, r *http.Request) {

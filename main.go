@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type Config struct {
 	ClientID     string // the single downstream OIDC client (Dex, or the e2e harness)
 	ClientSecret string
 	RedirectURIs []string
+	SessionTTL   time.Duration // lifetime of the bridge SSO session cookie
 }
 
 func loadConfig() Config {
@@ -38,12 +40,22 @@ func loadConfig() Config {
 		ClientID:     env("CLIENT_ID", "dex"),
 		ClientSecret: env("CLIENT_SECRET", "dex-secret"),
 		RedirectURIs: strings.Split(env("REDIRECT_URIS", "http://localhost:9000/callback"), ","),
+		SessionTTL:   time.Duration(envInt("BRIDGE_SESSION_TTL", 43200)) * time.Second,
 	}
 }
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
+	}
+	return def
+}
+
+func envInt(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }
@@ -84,6 +96,7 @@ func main() {
 	mux.HandleFunc("/.well-known/openid-configuration", b.handleDiscovery)
 	mux.HandleFunc("/authorize", b.handleAuthorize)
 	mux.HandleFunc("/login", b.handleLogin)
+	mux.HandleFunc("/logout", b.handleLogout)
 	mux.HandleFunc("/token", b.handleToken)
 	mux.HandleFunc("/jwks", b.handleJWKS)
 	mux.HandleFunc("/userinfo", b.handleUserinfo)
