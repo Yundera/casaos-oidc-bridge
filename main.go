@@ -95,6 +95,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", b.handleDiscovery)
 	mux.HandleFunc("/authorize", b.handleAuthorize)
+	mux.HandleFunc("/assets/", b.handleAsset)
 	mux.HandleFunc("/login", b.handleLogin)
 	mux.HandleFunc("/logout", b.handleLogout)
 	mux.HandleFunc("/token", b.handleToken)

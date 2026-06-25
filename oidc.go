@@ -34,8 +34,16 @@ func (b *Bridge) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginTmpl is the bridge's own login form (server-side credential proxy to
-// CasaOS — see README "Design decision"). Self-contained: all styles are inline
-// so the page renders with no external network dependency.
+// CasaOS — see README "Design decision"). Styled to match the CasaOS UI login
+// screen (frosted-glass panel over the CasaOS wallpaper, astronaut avatar,
+// casablue button) so users recognise it as the same sign-in. All CSS is inline
+// and the artwork is served from the bridge's own /assets routes (embedded into
+// the binary, see assets.go) — no external network dependency.
+//
+// Style values are lifted from CasaOS-UI: primary = $casablue hsl(216,90%,54%),
+// panel background rgba(255,255,255,.46) + blur(1rem), input background
+// rgba(255,255,255,.32), label colour #dfdfdf (see CasaOS-UI Login.vue /
+// _variables.scss).
 var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -44,19 +52,16 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
 <title>Sign in</title>
 <style>
   :root {
-    --bg-1: #0f172a;
-    --bg-2: #1e293b;
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --card: rgba(255, 255, 255, 0.06);
-    --border: rgba(255, 255, 255, 0.12);
-    --text: #f1f5f9;
-    --muted: #94a3b8;
-    --error-bg: rgba(239, 68, 68, 0.12);
-    --error-border: rgba(239, 68, 68, 0.4);
-    --error-text: #fca5a5;
+    --primary: hsl(216, 90%, 54%);
+    --primary-dark: hsl(216, 90%, 47%);
+    --panel: rgba(255, 255, 255, 0.46);
+    --input-bg: rgba(255, 255, 255, 0.32);
+    --label: #dfdfdf;
+    --text: #1d2530;
+    --danger: hsl(348, 86%, 61%);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
     min-height: 100vh;
@@ -67,127 +72,108 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: var(--text);
     background:
-      radial-gradient(1200px 600px at 15% -10%, rgba(99, 102, 241, 0.25), transparent 60%),
-      radial-gradient(900px 500px at 110% 110%, rgba(14, 165, 233, 0.18), transparent 55%),
-      linear-gradient(160deg, var(--bg-1), var(--bg-2));
+      linear-gradient(180deg, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.55) 100%),
+      url("/assets/wallpaper.jpg") center / cover no-repeat fixed;
   }
-  .card {
+  .login-panel {
     width: 100%;
-    max-width: 380px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    padding: 36px 32px 32px;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    max-width: 28rem;
+    text-align: left;
+    background: var(--panel);
+    backdrop-filter: blur(1rem);
+    -webkit-backdrop-filter: blur(1rem);
+    border-radius: 8px;
+    padding: 2.5rem 4rem;
+    box-shadow: 0 1.5rem 3rem rgba(0, 0, 0, 0.25);
   }
-  .logo {
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
-    display: grid;
-    place-items: center;
-    margin-bottom: 20px;
-    background: linear-gradient(135deg, var(--accent), #0ea5e9);
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45);
+  .avatar-wrap { display: flex; justify-content: center; padding-bottom: 0.75rem; }
+  .avatar {
+    width: 128px;
+    height: 128px;
+    border-radius: 50%;
+    display: block;
   }
-  .logo svg { width: 24px; height: 24px; color: #fff; }
-  h1 { font-size: 21px; font-weight: 650; margin: 0 0 4px; }
-  .lede { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
-  .field { margin-bottom: 16px; }
   label {
     display: block;
-    font-size: 12.5px;
-    font-weight: 550;
-    color: var(--muted);
-    margin-bottom: 7px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--label);
+    margin-bottom: 0.5rem;
   }
+  .field { margin-bottom: 0.75rem; }
+  .field.first { margin-top: 0.75rem; }
   input[type=text], input[type=password] {
     width: 100%;
-    padding: 12px 14px;
-    font-size: 14.5px;
+    height: 2.5em;
+    padding: 0 0.75em;
+    font-size: 1rem;
     color: var(--text);
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    background: var(--input-bg);
+    border: 1px solid transparent;
+    border-radius: 6px;
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    transition: box-shadow 0.15s, background 0.15s;
   }
-  input::placeholder { color: rgba(148, 163, 184, 0.55); }
+  input::placeholder { color: rgba(29, 37, 48, 0.45); }
   input:focus {
-    border-color: var(--accent);
-    background: rgba(0, 0, 0, 0.35);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    background: rgba(255, 255, 255, 0.45);
+    box-shadow: 0 0 0 2px rgba(33, 110, 230, 0.45);
   }
   button {
     width: 100%;
-    margin-top: 6px;
-    padding: 12px 14px;
-    font-size: 14.5px;
+    margin-top: 1.25rem;
+    height: 2.75em;
+    font-size: 1rem;
     font-weight: 600;
     color: #fff;
-    background: var(--accent);
+    background: var(--primary);
     border: none;
-    border-radius: 10px;
+    border-radius: 290486px;
     cursor: pointer;
     transition: background 0.15s, transform 0.05s;
   }
-  button:hover { background: var(--accent-hover); }
+  button:hover { background: var(--primary-dark); }
   button:active { transform: translateY(1px); }
   .alert {
-    display: flex;
-    gap: 9px;
-    align-items: flex-start;
-    background: var(--error-bg);
-    border: 1px solid var(--error-border);
-    color: var(--error-text);
-    font-size: 13px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.875rem;
     line-height: 1.4;
-    padding: 11px 13px;
-    border-radius: 10px;
-    margin-bottom: 20px;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    text-align: center;
   }
-  .alert svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+  @media screen and (max-width: 480px) {
+    .login-panel { padding: 2rem; margin: 0 1rem; }
+    .avatar { width: 96px; height: 96px; }
+  }
 </style>
 </head>
 <body>
-  <main class="card">
-    <div class="logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2"></rect>
-        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-      </svg>
+  <main class="login-panel">
+    <div class="avatar-wrap">
+      <img class="avatar" src="/assets/avatar.svg" alt="" aria-hidden="true">
     </div>
-
-    <h1>Sign in</h1>
-    <p class="lede">Enter your credentials to continue.</p>
 
     {{if .Error}}
-    <div class="alert" role="alert">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-      <span>Incorrect username or password. Please try again.</span>
-    </div>
+    <div class="alert" role="alert">Incorrect username or password. Please try again.</div>
     {{end}}
 
     <form method="POST" action="/login">
       <input type="hidden" name="rid" value="{{.RID}}">
-      <div class="field">
+      <div class="field first">
         <label for="username">Username</label>
         <input id="username" name="username" type="text" autocomplete="username"
                autocapitalize="none" autocorrect="off" spellcheck="false"
-               placeholder="admin" autofocus required>
+               autofocus required>
       </div>
       <div class="field">
         <label for="password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password"
-               placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
+               required>
       </div>
-      <button type="submit">Sign in</button>
+      <button type="submit">Login</button>
     </form>
   </main>
 </body>
